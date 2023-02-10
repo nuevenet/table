@@ -1,0 +1,274 @@
+{% import "table_buttons.html" as table_buttons %}
+{% import "filters.html" as filters %}
+
+{% set has_filter = false %}
+{% if mode != 'json' and table_filter is not null and ((table_filter.fields and table_filter.fields|length > 0) or table_filter.buttons.download.hidden == false) %}
+    {% set has_filter = true %}
+    {% import "table_filters.html" as filter %}
+    {{ filter._render(table_id, table_filter) }}
+{% endif %}
+
+{% if mode == 'html' %}
+<div class="box {{ box_style }}">
+    <div class="box-header with-border">
+        <h3 class="box-title">{{ title }}</h3>
+        {% if can_add %}
+        <button class="btn btn-success btn-md pull-right" onclick="newRecord_{{ table_id }}();">Nuevo</button>
+        {% endif %}
+        {% for button in top_buttons %}
+            {% if button.hidden == false %}
+                <div class="margin-right-sm">
+                    {{ table_buttons._renderButton(button, table_id) }}
+                </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    <div class="box-body">
+        <div class="message_{{ table_id }}"></div>
+        {% set pk = "" %}
+        {% set pk_value = "" %}
+        <div class="table-responsive">
+            <table id="{{ table_id }}" class="table table-bordered table-hover datatable {{ table_class }}" data-zeroRecords="{{ language.zeroRecords }}" data-ordering="{{ ordering }}" data-ordering-col="{{ ordering_col }}" data-paging="{{ paging }}" data-searching="{{ searching }}" data-page-length="{{ page_length }}" data-info="{{ info }}" {% if row_reorder %}data-row-reorder="{{ data_type }}"{% endif %}>
+                <thead>
+                    <tr>
+                    {% for column in columns %}
+                        {% if column.pk %}
+                            {% set pk = column.name %}
+                        {% endif %}
+                        {% if column.hidden == false %}
+                        <th {% if column.size is not empty %}class="{{ column.size }}"{% endif %} data-raw-type="{{ column.raw_type }}">
+                            {{ column.label }}
+                        </th>
+                        {% endif %}
+                    {% endfor %}
+                    {% for button in buttons %}
+                        {% if button.hidden == false %}
+                            <th class="col-sm-1" data-orderable="false"></th>
+                        {% endif %}
+                    {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in data %}
+                        {% set pk_value = '' %}
+                        {% if pk %}
+                            {% set pk_value = attribute(record, pk) %}
+                        {% endif %}
+                        <tr 
+                        data-id="{{ pk_value }}"
+                        class="
+                            {% if rows.color_config.field is not empty %}
+                                {{ attribute(rows.color_config.colours, attribute(record, rows.color_config.field)) }}
+                            {% endif %}
+                        "
+                        >
+                        {% for key, value in record.attributes %}
+                            {% if attribute(attribute(columns, key), 'hidden') == false %}
+                                <td
+                                    class="
+                                        {% if attribute(attribute(columns, key), 'size') is not empty %}
+                                            {{ attribute(attribute(columns, key), 'size') }}
+                                        {% endif %}
+                                        {% if row_reorder and key == 'orden' %}
+                                            col-reorder
+                                        {% endif %}
+                                    ">
+                                        {{ filters.filter_render(value, filter, columns, key, record, pk_value) }}
+                                </td>
+                            {% endif %}
+                        {% endfor %}
+                        {% for button in buttons %}
+                            {% if button.hidden == false %}
+                                <td class="text-center">
+                                    {{ table_buttons.renderButton(button, record, table_id) }}
+                                </td>
+                            {% endif %}
+                        {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% for column in columns %}
+                {% if column.modal_onclick is iterable %}
+                    {% include column.modal_onclick.modal_template %}
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+    function newRecord_{{ table_id }}() {
+        window.location.href = "{{ base_url }}/page/{{ edit_page }}";
+    }
+
+    function editRecord_{{ table_id }}(event, btn) {
+        var id = getId(btn);
+        var url = "{{ base_url }}/page/{{ edit_page }}/" + id;
+        
+        if (event.shiftKey) {
+            window.open(url, '_blank').focus();
+        } else {
+            window.location.href = url;
+        }
+    }
+
+    function cloneRecord_{{ table_id }}(btn) {
+        var id = getId(btn);
+        window.location.href = "{{ base_url }}/page/{{ edit_page }}/clone/" + id;
+    }
+
+    var on_action = false;
+    function deleteRecord_{{ table_id }}(btn) {
+
+        if (true {% if buttons.delete.confirm %} && window.confirm("{{ buttons.delete.confirm }}"){% endif %}) {
+
+            var id = getId(btn);
+
+            on_action = true;
+
+            {% if is_group %}
+                showCodigoEmpleado(function() {
+            {% endif %}
+                    showLoading();
+                    $.ajax({
+                        type: "DELETE",
+                        url: "{{ base_url }}/api/{{ data_type }}/" + id,
+                        {% if is_group %}
+                            data: $('#codigo_empleado_control').serialize(),
+                        {% endif %}
+                        success: function(response){
+                            {% if is_group %}
+                                hideCodigoEmpleado();
+                            {% endif %}
+                            try { response = jQuery.parseJSON(response); } catch(e) {}
+                            if(typeof response =='object') {
+                                if(response.status == 200) {
+                                    var table = $(btn).parents("table:eq(0)").DataTable();
+                                    table
+                                        .row( $(btn).parents("tr:eq(0)") )
+                                        .remove()
+                                        .draw();
+                                    $(".message_{{ table_id }}").html('');
+                                } else {
+                                    $(".message_{{ table_id }}").html(response.html_message);
+                                }
+                            } else {
+                                $(".message_{{ table_id }}").html(response);
+                            }
+                            on_action = false;
+                            hideLoading();
+                        },
+                        error: function(){
+                            alert("failure");
+                            on_action = false;
+                            hideLoading();
+                        }
+                    });
+            {% if is_group %}
+                });
+            {% endif %}
+        }
+    }
+
+    {% if update is iterable %}
+        {% if update.time_update is not empty %}
+            setInterval(update_{{ table_id }}, {{ update.time_update }});
+        {% endif %}
+    function update_{{ table_id }}(execute = false, data = false, onComplete = false) {
+        if(execute || (!on_action && $("div.popover[role='tooltip']").length == 0 && $("div.modal[role='dialog']:visible").length == 0 && ($("div.dataTables_filter input[type='search']").val() === undefined || $("div.dataTables_filter input[type='search']").val().length == 0))) {
+            {% if update.showLoading == true %}
+                showLoading();
+            {% endif %}
+            $.ajax({
+                type: "GET",
+                url: "{{ update.url }}"{{ update.url_sufix | raw }},
+                data: data,
+                success: function(data){
+                    var data = JSON.parse(data).data;
+                    var t = $("#{{ table_id }}").DataTable();
+                    t.clear().draw();
+                    for (var i = 0; i < data.length; i++) {
+                        var values = Array();
+                        for (var j = 0; j < data[i].data.length; j++) {
+                            values[j] = $('<textarea />').html(data[i].data[j]).text();
+                        }
+                        var row = t.row.add(values);
+                        $(row.node()).data("id", data[i].id);
+                        $(row.node()).find('td:eq(0)').attr('data-id', data[i].data[0]);
+                        $(row.node()).addClass(data[i].color);
+                        row.draw(false);
+                    };
+                    initPlugins();
+                    {% if selectable_rows is iterable %}
+                        $($('#{{ table_id }}').dataTable().fnGetNodes()).find('input[name="check_select_row"]').change(function () {
+                            {{ selectable_rows.fn_onchange }};
+                        });
+                    {% endif %}
+                    {{ update.fn_onfinish | raw }};
+                    {% if update.showLoading == true %}
+                        hideLoading();
+                    {% endif %}
+                },
+                complete: onComplete
+            });
+        }
+    }
+    {% endif %}
+
+    function getId(btn) {
+        return $(btn).parents("tr:eq(0)").data("id");
+    }
+
+    {{ table_buttons.renderFnButtons(buttons, base_url, list_page, table_id, is_group) }}
+
+    {{ table_buttons.renderFnButtons(top_buttons, base_url, list_page, table_id, is_group) }}
+
+</script>
+
+{% elseif mode == 'json' %}
+
+    {% set pk = "" %}
+    {% set pk_value = "" %}
+    {% for column in columns %}
+        {% if column.pk %}
+           {% set pk = column.name %}
+        {% endif %}
+    {% endfor %}
+
+    [
+    {% for count2, record in data %}
+        {% if pk != '' %}
+            {% set pk_value = attribute(record, pk) %}
+        {% endif %}
+        {% if count2 > 0 %}
+        ,
+        {% endif %}
+        {% set color = '' %}
+        {% if rows.color_config.field is not empty %}
+            {% set color = attribute(rows.color_config.colours, attribute(record, rows.color_config.field)) %}
+        {% endif %}
+      {
+        "id" : "{% if pk != '' %}{{ attribute(record, pk) }}{% endif %}",
+        "color" : "{{ color }}",
+        "data" : [
+            {% set count = 0 %}
+            {% for key, value in record.attributes %}
+                {% if attribute(attribute(columns, key), 'hidden') == false %}
+                    {% if count > 0 %}
+                    ,
+                    {% endif %}
+                    {% set count = count + 1 %}
+                    "{{ filters.filter_render(value, filter, columns, key, record, pk_value) | trim | escape('html') }}"
+                {% endif %}
+            {% endfor %}
+            {% for button in buttons %}
+                {% if button.hidden == false %}
+                    , "{{ table_buttons.renderButton(button, record, table_id) | trim | escape('html') }}"
+                {% endif %}
+            {% endfor %}
+        ]
+      }
+    {% endfor %}
+    ]
+{% endif %}

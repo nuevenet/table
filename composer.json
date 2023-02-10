@@ -1,0 +1,14 @@
+{
+    "name": "nuevenet/table",
+    "description": "A Twig library for tables",
+    "type": "library",
+    "require": {
+        "twig/twig": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Nuevenet\\Table\\": "resources/"
+        }
+    },
+    "license": "MIT"
+}
